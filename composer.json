@@ -1,0 +1,34 @@
+{
+    "name": "sue/coroutine",
+    "description": "提供基于sue/event-loop的协程组件",
+    "type": "library",
+    "require": {
+        "sue/event-loop": "^1.0",
+        "react/promise": "^2.9",
+        "react/promise-timer": "^1.9"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.6"
+    },
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Sue\\Coroutine\\": "src/"
+        },
+        "files": [
+            "src/functions.php"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Sue\\Coroutine\\Tests\\": "tests/"
+        }
+    },
+    "authors": [
+        {
+            "name": "heroest",
+            "email": "kakashi@live.cn"
+        }
+    ],
+    "minimum-stability": "stable"
+}
