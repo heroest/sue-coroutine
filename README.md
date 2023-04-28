@@ -1,8 +1,9 @@
 ## ReactPHP协程组件
+提供基于sue/event-loop的协程组件
 
 ## What is ReactPHP?
 
-[ReactPHP](https://reactphp.org/)是一款基于PHP的事件驱动的组件。核心是提供EventLoop，然后提供基于EventLoop上的各种组件，比方说I/O处理等。ReactPHP协程组件也是基于ReactPHP提供的EventLoop
+[ReactPHP](https://reactphp.org/)是一款基于PHP的事件驱动的组件。核心是提供EventLoop，然后提供基于EventLoop上的各种组件，比方说I/O处理等。sue/event-loop组件也是基于ReactPHP提供的EventLoop
 
 **Table of Contents**
 * [Install](#install)

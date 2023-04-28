@@ -35,6 +35,10 @@
         {
             "type": "composer",
             "url": "https://mirrors.aliyun.com/composer/"
+        },
+        {
+            "type": "composer",
+            "url": "https://packagist.phpcomposer.com"
         }
     ]
 }
