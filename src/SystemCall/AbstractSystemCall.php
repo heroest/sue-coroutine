@@ -5,7 +5,6 @@ namespace Sue\Coroutine\SystemCall;
 use Exception;
 use Sue\Coroutine\Coroutine;
 
-use function Sue\EventLoop\call;
 use function React\Promise\reject;
 
 abstract class AbstractSystemCall
@@ -21,7 +20,7 @@ abstract class AbstractSystemCall
     final public function wrapRun(Coroutine $coroutine)
     {
         try {
-            return call([$this, 'run'], $coroutine);
+            return call_user_func([$this, 'run'], $coroutine);
         } catch (Exception $e) {
             return reject($e);
         }

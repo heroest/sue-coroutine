@@ -2,6 +2,7 @@
 
 namespace Sue\Coroutine\Tests;
 
+use ErrorException;
 use Exception;
 use Sue\Coroutine\Tests\BaseTestCase;
 
@@ -88,13 +89,13 @@ final class YieldTest extends BaseTestCase
         $yielded = false;
         $reject = false;
         co(function () use (&$yielded) {
-            $yielded = yield 1 / 0;
+            $yielded = yield new ErrorException('error');
         })->then(null, function ($error) use (&$reject) {
             $reject = $error;
         });
         loop()->run();
         $this->assertEquals(null, $yielded);
-        $this->assertEquals(new \ErrorException('Division by zero', 2, E_USER_ERROR), $reject);
+        $this->assertEquals(new ErrorException('error'), $reject);
     }
 
     public function testErrorWithHandling()
@@ -103,14 +104,14 @@ final class YieldTest extends BaseTestCase
         $reject = false;
         co(function () use (&$yielded, &$reject) {
             try {
-                $yielded = yield 1 / 0;
+                $yielded = yield new ErrorException('error');
             } catch (Exception $e) {
                 $reject = $e;
             }
         });
         loop()->run();
         $this->assertEquals(null, $yielded);
-        $this->assertEquals(new \ErrorException('Division by zero', 2, E_USER_ERROR), $reject);
+        $this->assertEquals(new ErrorException('error'), $reject);
     }
 
     public function testGeneratorWithNoReturn()

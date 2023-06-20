@@ -19,7 +19,6 @@ use Sue\Coroutine\SystemCall\AbstractSystemCall;
 use function React\Promise\resolve;
 use function React\Promise\reject;
 use function Sue\EventLoop\setInterval;
-use function Sue\EventLoop\call;
 use function Sue\EventLoop\cancelTimer;
 
 class Scheduler
@@ -82,7 +81,7 @@ class Scheduler
     public function execute(callable $callable, ...$params)
     {
         try {
-            $result = call($callable, ...$params);
+            $result = call_user_func_array($callable, $params);
             if ($result instanceof Generator) {
                 $coroutine = $this->createCoroutine($result);
                 $this->ticker or $this->ticker = setInterval(0, $this->handler);

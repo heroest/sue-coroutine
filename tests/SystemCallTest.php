@@ -7,7 +7,6 @@ use Sue\Coroutine\Exceptions;
 use Sue\Coroutine\SystemCall;
 use Sue\Coroutine\Tests\BaseTestCase;
 use Sue\Coroutine\Tests\SystemCall\ErrorCall;
-use Sue\Coroutine\Tests\SystemCall\WarningCall;
 
 
 use function Sue\Coroutine\co;
@@ -93,7 +92,7 @@ final class SystemCallTest extends BaseTestCase
         $this->assertEquals(false, $after);
     }
 
-    public function testNestedSystemcallTimeout()
+    public function testNestedSystemCallTimeout()
     {
         $child = function () {
             yield SystemCall\timeout(2);
@@ -106,7 +105,7 @@ final class SystemCallTest extends BaseTestCase
         $this->assertTimeout(self::unwrapSettledPromise($promise));
     }
 
-    public function testNestedSystemcallTimeoutWithHandling()
+    public function testNestedSystemCallTimeoutWithHandling()
     {
         $child = function () {
             yield SystemCall\timeout(2);
@@ -180,22 +179,6 @@ final class SystemCallTest extends BaseTestCase
         });
         loop()->run();
         $this->assertEquals($throwable, $exception);
-    }
-
-    public function testWarningSystemCall()
-    {
-        $throwable = null;
-        co(function () use (&$throwable) {
-            try {
-                yield new WarningCall(function () {
-                    return 1 / 0;
-                });
-            } catch (\Exception $e) {
-                $throwable = $e;
-            }
-        });
-        loop()->run();
-        $this->assertEquals(new \ErrorException('Division by zero', 2, E_USER_ERROR), $throwable);
     }
 
     private function assertTimeout($value)

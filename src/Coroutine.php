@@ -9,8 +9,6 @@ use React\Promise\Promise;
 use React\Promise\PromiseInterface;
 use Sue\Coroutine\Exceptions\CancelException;
 
-use function Sue\EventLoop\call;
-
 class Coroutine
 {
     const IDLE = 1;
@@ -110,16 +108,14 @@ class Coroutine
      */
     public function get()
     {
-        return call(function () {
-            if ($this->generator->valid()) {
-                return $this->generator->current();
-            } elseif (method_exists($this->generator, 'getReturn')) { //php7开始才允许在generator里使用return方法
-                $this->generator->next();
-                return call_user_func([$this->generator, 'getReturn']);
-            } else {
-                return null;
-            }
-        });
+        if ($this->generator->valid()) {
+            return $this->generator->current();
+        } elseif (method_exists($this->generator, 'getReturn')) { //php7开始才允许在generator里使用return方法
+            $this->generator->next();
+            return call_user_func([$this->generator, 'getReturn']);
+        } else {
+            return null;
+        }
     }
 
     /**
@@ -133,7 +129,7 @@ class Coroutine
         if ($this->generator->valid() and !$this->in(self::SETTLED)) {
             try {
                 $method = $value instanceof Exception ? 'throw' : 'send';
-                call([$this->generator, $method], $value);
+                call_user_func([$this->generator, $method], $value);
             } catch (Exception $e) {
                 $this->settle($e);
             }
