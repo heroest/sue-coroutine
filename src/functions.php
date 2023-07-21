@@ -89,3 +89,15 @@ function cancel($message, $code = 500)
 
     return new \Sue\Coroutine\SystemCall\Cancel($message, $code);
 }
+
+namespace Sue\Coroutine\Utils;
+
+/**
+ * 是否是php7.0以上版本
+ *
+ * @return boolean
+ */
+function isPhp7()
+{
+    return \PHP_VERSION_ID >= 70000;
+}

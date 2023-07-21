@@ -2,12 +2,15 @@
 
 namespace Sue\Coroutine;
 
+use Throwable;
 use Exception;
 use Generator;
 use React\Promise\Deferred;
 use React\Promise\Promise;
 use React\Promise\PromiseInterface;
 use Sue\Coroutine\Exceptions\CancelException;
+
+use function Sue\Coroutine\Utils\isPhp7;
 
 class Coroutine
 {
@@ -22,6 +25,9 @@ class Coroutine
     /** @var Deferred $deferred Deferred */
     private $deferred;
 
+    /** @var PromiseInterface|Promise $promise */
+    private $promise;
+
     /** @var int $state 状态 */
     private $state;
 
@@ -34,13 +40,29 @@ class Coroutine
     /** @var float $timeout */
     private $timeout = 0;
 
+    /** @var mixed $last 最后一次返回值(<php7) */
+    private $last = null;
+
     public function __construct(Generator $generator)
     {
         $this->generator = $generator;
-        $this->deferred = new Deferred(function () {
-            $this->cancel(new CancelException('Coroutine is cancelled by promise cancellation'));
-        });
         $this->state = self::WORKING;
+
+        $that = $this;
+        $this->deferred = new Deferred(static function () use (&$that) {
+            $that->cancel(new CancelException('Coroutine is cancelled by promise cancellation'));
+        });
+
+        /** @var Promise $promise */
+        $promise = $this->deferred->promise();
+        $that = $this;
+        $this->promise = $promise->always(static function () use (&$that) {
+            if ($that->progress) {
+                $that->progress->cancel();
+                $that->progress = null;
+            };
+            $that = null;
+        });
     }
 
     /**
@@ -50,7 +72,7 @@ class Coroutine
      */
     public function promise()
     {
-        return $this->deferred->promise();
+        return $this->promise;
     }
 
     /**
@@ -108,14 +130,22 @@ class Coroutine
      */
     public function get()
     {
-        if ($this->generator->valid()) {
-            return $this->generator->current();
-        } elseif (method_exists($this->generator, 'getReturn')) { //php7开始才允许在generator里使用return方法
-            $this->generator->next();
-            return call_user_func([$this->generator, 'getReturn']);
-        } else {
-            return null;
+        $result = null;
+        try {
+            if ($this->generator->valid()) {
+                $result = $this->generator->current();
+            } elseif (isPhp7()) { //php7开始才允许在generator里使用return方法
+                $this->generator->next(); //以免generator没有return语句
+                $result = call_user_func([$this->generator, 'getReturn']);
+            } else {
+                $result = $this->last;
+            }
+        } catch (Throwable $e) {
+            $result = $e;
+        } catch (Exception $e) {
+            $result = $e;
         }
+        return $result;
     }
 
     /**
@@ -128,8 +158,14 @@ class Coroutine
     {
         if ($this->generator->valid() and !$this->in(self::SETTLED)) {
             try {
-                $method = $value instanceof Exception ? 'throw' : 'send';
-                call_user_func([$this->generator, $method], $value);
+                if ($value instanceof Throwable or $value instanceof Exception) {
+                    $this->generator->throw($value);
+                } else {
+                    isPhp7() or $this->last = $value; //非php7时，保存最后一个数据
+                    $this->generator->send($value);
+                }
+            } catch (Throwable $e) {
+                $this->settle($e);
             } catch (Exception $e) {
                 $this->settle($e);
             }
@@ -167,14 +203,9 @@ class Coroutine
      */
     public function cancel(Exception $exception = null)
     {
-        if (null !== $exception) {
-            $this->settle($exception);
-        }
-
-        if ($this->progress) {
-            $this->progress->cancel();
-            $this->progress = null;
-        }
+        $exception = $exception
+            ?: new CancelException("Coroutine is cancelled");
+        $this->settle($exception);
     }
 
     /**
@@ -183,10 +214,10 @@ class Coroutine
      * @param mixed $value
      * @return void
      */
-    private function settle($value)
+    protected function settle($value)
     {
         $this->state = self::SETTLED;
-        $value instanceof Exception
+        ($value instanceof Throwable or $value instanceof Exception)
             ? $this->deferred->reject($value)
             : $this->deferred->resolve($value);
     }

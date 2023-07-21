@@ -2,6 +2,7 @@
 
 namespace Sue\Coroutine;
 
+use Throwable;
 use Exception;
 use Generator;
 use SplObjectStorage;
@@ -89,6 +90,8 @@ class Scheduler
             } else {
                 return resolve($result);
             }
+        } catch (Throwable $e) {
+            return reject($e);
         } catch (Exception $e) {
             return reject($e);
         }
@@ -304,6 +307,8 @@ class Scheduler
                     default:
                         try {
                             $this->handleYielded($coroutine, $coroutine->get());
+                        } catch (Throwable $e) {
+                            $this->cancelCoroutine($coroutine, $e);
                         } catch (Exception $e) {
                             $this->cancelCoroutine($coroutine, $e);
                         }

@@ -2,12 +2,17 @@
 
 namespace Sue\Coroutine\Tests;
 
-use ErrorException;
 use Exception;
+use RuntimeException;
+use SplFileObject;
+use React\Promise\Deferred;
+use Sue\Coroutine\Exceptions\CancelException;
 use Sue\Coroutine\Tests\BaseTestCase;
+use Sue\Coroutine\Tests\Custom\GetCoroutine;
 
 use function React\Promise\resolve;
 use function Sue\EventLoop\loop;
+use function Sue\EventLoop\setTimeout;
 use function Sue\Coroutine\co;
 use function Sue\Coroutine\defer;
 use function Sue\Coroutine\go;
@@ -54,7 +59,7 @@ final class YieldTest extends BaseTestCase
         $this->assertEquals(6, $total);
     }
 
-    public function testThorwable()
+    public function testThrowable()
     {
         $yielded = false;
         $reject = false;
@@ -84,18 +89,32 @@ final class YieldTest extends BaseTestCase
         $this->assertEquals($exception, $yielded);
     }
 
-    public function testError()
+    public function testWithError()
     {
         $yielded = false;
         $reject = false;
         co(function () use (&$yielded) {
-            $yielded = yield new ErrorException('error');
+            $yielded = yield new SplFileObject(); //故意写个语法错误
+        })->done(null, function ($error) use (&$reject) {
+            $reject = $error;
+        });
+        loop()->run();
+        $this->assertEquals(null, $yielded);
+        $this->assertTrue($reject instanceof \ArgumentCountError);
+    }
+
+    public function testException()
+    {
+        $yielded = false;
+        $reject = false;
+        co(function () use (&$yielded) {
+            $yielded = yield new Exception('error');
         })->then(null, function ($error) use (&$reject) {
             $reject = $error;
         });
         loop()->run();
         $this->assertEquals(null, $yielded);
-        $this->assertEquals(new ErrorException('error'), $reject);
+        $this->assertEquals(new \Exception('error'), $reject);
     }
 
     public function testErrorWithHandling()
@@ -104,14 +123,14 @@ final class YieldTest extends BaseTestCase
         $reject = false;
         co(function () use (&$yielded, &$reject) {
             try {
-                $yielded = yield new ErrorException('error');
+                $yielded = yield new Exception('error');
             } catch (Exception $e) {
                 $reject = $e;
             }
         });
         loop()->run();
         $this->assertEquals(null, $yielded);
-        $this->assertEquals(new ErrorException('error'), $reject);
+        $this->assertEquals(new \Exception('error'), $reject);
     }
 
     public function testGeneratorWithNoReturn()
@@ -311,6 +330,36 @@ final class YieldTest extends BaseTestCase
         $this->assertLessThanOrEqual(2.2, $time_used);
     }
 
+    public function testDeferWithResult()
+    {
+        $st = microtime(true);
+        $promise = defer(2, function () {
+            return resolve('foo');
+        });
+        loop()->run();
+        $value = self::unwrapSettledPromise($promise);
+        $this->assertEquals('foo', $value);
+        $time_used = microtime(true) - $st;
+        $this->assertGreaterThanOrEqual(2, $time_used);
+    }
+
+    public function testDeferWithCancel()
+    {
+        $st = microtime(true);
+        $promise = defer(2, function () {
+            yield resolve('foo');
+        });
+        $exception = null;
+        $promise->otherwise(function ($e) use (&$exception) {
+            $exception = $e;
+        });
+        $promise->cancel();
+        loop()->run();
+        $this->assertNotNull($exception);
+        $time_used = microtime(true) - $st;
+        $this->assertLessThanOrEqual(1, $time_used);
+    }
+
     public function testDeferWithParams()
     {
         $yielded = false;
@@ -335,5 +384,53 @@ final class YieldTest extends BaseTestCase
         }, resolve($word));
         loop()->run();
         $this->assertEquals($word, $yielded);
+    }
+
+    public function testCancelDuringProgress()
+    {
+        $foo = new RuntimeException('foo');
+        $bar = new RuntimeException('bar');
+        $throwable = null;
+        co(function ($foo, $bar) {
+            $deferred = new Deferred(function ($_, $reject) use ($foo) {
+                $reject($foo);
+            });
+            $coroutine = yield new GetCoroutine();
+            setTimeout(0.5, function () use ($coroutine, $bar) {
+                $coroutine->cancel($bar);
+            });
+            yield $deferred->promise();
+            return true;
+        }, $foo, $bar)
+        ->otherwise(function ($e) use (&$throwable) {
+                $throwable = $e;
+            }
+        );
+        loop()->run();
+        $this->assertEquals($bar, $throwable);
+    }
+
+    public function testCancelDuringProgressWithNull()
+    {
+        $foo = new RuntimeException('foo');
+        $expected = new CancelException('Coroutine is cancelled');
+        $throwable = null;
+        co(function ($foo) {
+            $deferred = new Deferred(function ($_, $reject) use ($foo) {
+                $reject($foo);
+            });
+            $coroutine = yield new GetCoroutine();
+            setTimeout(0.5, function () use ($coroutine) {
+                $coroutine->cancel(null);
+            });
+            yield $deferred->promise();
+            return true;
+        }, $foo)
+        ->otherwise(function ($e) use (&$throwable) {
+                $throwable = $e;
+            }
+        );
+        loop()->run();
+        $this->assertEquals($expected, $throwable);
     }
 }
