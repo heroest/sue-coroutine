@@ -16,6 +16,7 @@ use Sue\Coroutine\Coroutine;
 use Sue\Coroutine\Exceptions\TimeoutException;
 use Sue\Coroutine\Exceptions\CancelException;
 use Sue\Coroutine\SystemCall\AbstractSystemCall;
+use Sue\Coroutine\SystemCall\ReturnValue;
 
 use function React\Promise\resolve;
 use function React\Promise\reject;
@@ -36,13 +37,9 @@ class Scheduler
     /** @var null|TimerInterface $ticker */
     private $ticker = null;
 
-    /** @var \Closure $handler */
-    private $handler;
-
     private function __construct()
     {
         $this->coroutineWorking = new SplObjectStorage();
-        $this->handler = $this->buildHandler();
     }
 
     /**
@@ -85,7 +82,7 @@ class Scheduler
             $result = call_user_func_array($callable, $params);
             if ($result instanceof Generator) {
                 $coroutine = $this->createCoroutine($result);
-                $this->ticker or $this->ticker = setInterval(0, $this->handler);
+                $this->ticker or $this->ticker = setInterval(0, [$this, 'tick']);
                 return $coroutine->promise();
             } else {
                 return resolve($result);
@@ -209,8 +206,8 @@ class Scheduler
                     break;
 
                 case is_array($item):
-                    $generator = (function () use ($item) {
-                        return yield $item;
+                    $generator = (static function () use ($item) {
+                        yield new ReturnValue(yield $item);
                     })();
                     $child = $this->createCoroutine($generator);
                     $promises[$key] = $child->promise();
@@ -235,9 +232,9 @@ class Scheduler
     private function await(array $promises)
     {
         $canceller = new CancellationQueue();
-        $deferred = new Deferred(function () use ($canceller) {
+        $deferred = new Deferred(function ($_, $reject) use ($canceller) {
+            $reject(new CancelException("Awaitable promise has been cancelled"));
             $canceller();
-            throw new CancelException("Awaitable promise has been cancelled");
         });
 
         $todo_count = count($promises);
@@ -270,51 +267,49 @@ class Scheduler
     }
 
     /**
-     * 生成一个用以在eventloop上注册的tick方法， interval = 0
+     * 在eventloop上注册的tick方法， interval = 0
      *
      * @return \Closure
      */
-    private function buildHandler()
+    public function tick()
     {
-        return function () {
-            if (0 === $count = $this->coroutineWorking->count()) {
-                cancelTimer($this->ticker);
-                $this->ticker = null;
+        if (0 === $count = $this->coroutineWorking->count()) {
+            cancelTimer($this->ticker);
+            $this->ticker = null;
+            return;
+        }
+
+        $this->coroutineWorking->rewind();
+        while ($count--) {
+            /** @var Coroutine $coroutine */
+            if (null === $coroutine = $this->coroutineWorking->current()) {
                 return;
             }
 
-            $this->coroutineWorking->rewind();
-            while ($count--) {
-                /** @var Coroutine $coroutine */
-                if (null === $coroutine = $this->coroutineWorking->current()) {
-                    return;
-                }
+            $this->coroutineWorking->next();
+            switch (true) {
+                case $coroutine->in(Coroutine::SETTLED):
+                    $this->detachCoroutine($coroutine);
+                    break;
 
-                $this->coroutineWorking->next();
-                switch (true) {
-                    case $coroutine->in(Coroutine::SETTLED):
-                        $this->detachCoroutine($coroutine);
-                        break;
+                case $coroutine->isTimeout():
+                    $e = new TimeoutException("Coroutine is timeout: " . $coroutine->getTimeout());
+                    $this->cancelCoroutine($coroutine, $e);
+                    break;
 
-                    case $coroutine->isTimeout():
-                        $e = new TimeoutException("Coroutine is timeout: " . $coroutine->getTimeout());
+                case $coroutine->in(Coroutine::PROGRESS):
+                    break;
+
+                default:
+                    try {
+                        $this->handleYielded($coroutine, $coroutine->get());
+                    } catch (Throwable $e) {
                         $this->cancelCoroutine($coroutine, $e);
-                        break;
-
-                    case $coroutine->in(Coroutine::PROGRESS):
-                        break;
-
-                    default:
-                        try {
-                            $this->handleYielded($coroutine, $coroutine->get());
-                        } catch (Throwable $e) {
-                            $this->cancelCoroutine($coroutine, $e);
-                        } catch (Exception $e) {
-                            $this->cancelCoroutine($coroutine, $e);
-                        }
-                        break;
-                }
+                    } catch (Exception $e) {
+                        $this->cancelCoroutine($coroutine, $e);
+                    }
+                    break;
             }
-        };
+        }
     }
 }

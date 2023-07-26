@@ -1,4 +1,5 @@
-## ReactPHP协程组件
+sue\coroutine
+====================
 提供基于sue/event-loop的协程组件
 
 ## What is ReactPHP?
@@ -8,6 +9,7 @@
 **Table of Contents**
 * [Install](#install)
 * [Requirements](#requirements)
+* [PHP5兼容方案](#php5兼容方案)
 * [Quickstart example](#quickstart-example)
 * [Methods](#methods)
   * [\Sue\Coroutine\co](#co)
@@ -16,6 +18,7 @@
   * [\Sue\Coroutine\SystemCall\sleep](#sleep)
   * [\Sue\Coroutine\SystemCall\timeout](#timeout)
   * [\Sue\Coroutine\SystemCall\cancel](#cancel)
+  * [\Sue\Coroutine\SystemCall\returnValue](#returnValue)
 * [Tests](#tests)
 * [License](#license)
 
@@ -24,6 +27,21 @@
 
 ## requirements
 > php: >= 5.6.0
+
+## php5兼容方案
+`sue\coroutine`是基于php generator实现。php7版本开始允许在迭代器中加入`return`用来控制返回，但是在php5的迭代器中使用return会报错。所以php5可以用`Sue\Coroutine\SystemCall\returnValue`来代替`return`
+
+```php
+co(function () {
+    if (someCondition()) {
+        yield \Sue\Coroutine\SystemCall\returnValue(false);
+        //以上语句等同于在php7的 return false
+    }
+
+    yield someAsyncPromise();
+    doSomethingAfterPromiseResolved();
+});
+```
 
 ## quickstart-example
 
@@ -123,6 +141,7 @@ loop()->run();
 ```
 
 ## sleep
+**可以用\Sue\Coroutine\SystemCall\pause方法代替，效果一致**
 `Sue\Coroutine\SystemCall\sleep($seconds)`生成一个系统指令，可以让当前协程进行休眠指定X秒，之后继续执行
 ```php
 use Sue\Coroutine\SystemCall;
@@ -214,6 +233,25 @@ co(function () use ($children) {
     }
 });
 loop()->run();
+```
+
+## returnValue
+`Sue\Coroutine\SystemCall\returnValue($value)`生成一条系统指令，可以中止当前协程及子协程，并返回value值
+
+```php
+$children = (function () {
+    if (someCondition()) {
+        yield \Sue\Coroutine\SystemCall\returnValue\returnValue('foo');
+        //等同于php7+中的: return 'foo';
+    }
+
+    yield someAsyncPromise();
+    return 'bar';
+})();
+
+co(function () use ($children) {
+    $name = yield $children;
+});
 ```
 
 ## tests

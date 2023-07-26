@@ -40,9 +40,6 @@ class Coroutine
     /** @var float $timeout */
     private $timeout = 0;
 
-    /** @var mixed $last 最后一次返回值(<php7) */
-    private $last = null;
-
     public function __construct(Generator $generator)
     {
         $this->generator = $generator;
@@ -51,15 +48,16 @@ class Coroutine
         $that = $this;
         $this->deferred = new Deferred(static function () use (&$that) {
             $that->cancel(new CancelException('Coroutine is cancelled by promise cancellation'));
+            $that = null;
         });
 
         /** @var Promise $promise */
         $promise = $this->deferred->promise();
         $that = $this;
         $this->promise = $promise->always(static function () use (&$that) {
-            if ($that->progress) {
-                $that->progress->cancel();
+            if ($progress = $that->progress) {
                 $that->progress = null;
+                $progress->cancel();
             };
             $that = null;
         });
@@ -135,10 +133,12 @@ class Coroutine
             if ($this->generator->valid()) {
                 $result = $this->generator->current();
             } elseif (isPhp7()) { //php7开始才允许在generator里使用return方法
-                $this->generator->next(); //以免generator没有return语句
+                /**
+                 * 以免generator没有return语句
+                 * https://www.php.net/manual/en/generator.getreturn.php#121449
+                 */
+                $this->generator->next();
                 $result = call_user_func([$this->generator, 'getReturn']);
-            } else {
-                $result = $this->last;
             }
         } catch (Throwable $e) {
             $result = $e;
@@ -158,12 +158,9 @@ class Coroutine
     {
         if ($this->generator->valid() and !$this->in(self::SETTLED)) {
             try {
-                if ($value instanceof Throwable or $value instanceof Exception) {
-                    $this->generator->throw($value);
-                } else {
-                    isPhp7() or $this->last = $value; //非php7时，保存最后一个数据
-                    $this->generator->send($value);
-                }
+                ($value instanceof Throwable or $value instanceof Exception)
+                    ? $this->generator->throw($value)
+                    : $this->generator->send($value);
             } catch (Throwable $e) {
                 $this->settle($e);
             } catch (Exception $e) {
@@ -182,15 +179,21 @@ class Coroutine
      */
     public function progress(PromiseInterface $promise)
     {
+        if (!$this->in(self::WORKING)) { //非working状态下不允许通过promise挂起协程
+            return;
+        }
+
         /** @var \React\Promise\ExtendedPromiseInterface $promise */
         $this->progress = $promise;
         $this->state = self::PROGRESS;
-        $closure = function ($value) {
-            $this->progress = null;
-            if ($this->in(self::PROGRESS)) {
-                $this->state = self::WORKING;
+        $that = $this;
+        $closure = static function ($value) use (&$that) {
+            $that->progress = null;
+            if ($that->in(self::PROGRESS)) {
+                $that->state = self::WORKING;
             }
-            $this->set($value);
+            $that->set($value);
+            $that = null;
         };
         $promise->done($closure, $closure);
     }
@@ -206,6 +209,17 @@ class Coroutine
         $exception = $exception
             ?: new CancelException("Coroutine is cancelled");
         $this->settle($exception);
+    }
+
+    /**
+     * 取消协程运行，并返回填充值
+     *
+     * @param mixed $value
+     * @return void
+     */
+    public function fulfill($value)
+    {
+        $this->settle($value);
     }
 
     /**

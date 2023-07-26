@@ -51,11 +51,24 @@ namespace Sue\Coroutine\SystemCall;
 
 /**
  * 系统调用：延迟执行
+ * 可以用\Sue\Coroutine\SystemCall\pause()替代
+ *
+ * @param float $seconds 秒
+ * @return \Sue\Coroutine\SystemCall\AbstractSystemCall
+ * @deprecated 2.0
+ */
+function sleep($seconds)
+{
+    return pause($seconds);
+}
+
+/**
+ * 系统调用：延迟执行
  *
  * @param float $seconds 秒
  * @return \Sue\Coroutine\SystemCall\AbstractSystemCall
  */
-function sleep($seconds)
+function pause($seconds)
 {
     $seconds = (float) $seconds;
 
@@ -88,6 +101,18 @@ function cancel($message, $code = 500)
     $code = (int) $code;
 
     return new \Sue\Coroutine\SystemCall\Cancel($message, $code);
+}
+
+/**
+ * 系统调用，取消当前协程执行， 并返回指定的值
+ * php7.0 以上没有必要，直接return就好
+ *
+ * @param mixed $value
+ * @return void
+ */
+function returnValue($value)
+{
+    return new \Sue\Coroutine\SystemCall\ReturnValue($value);
 }
 
 namespace Sue\Coroutine\Utils;
