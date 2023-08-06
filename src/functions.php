@@ -40,8 +40,9 @@ function defer($seconds, callable $callable, ...$params)
     $seconds = (float) $seconds;
 
     $closure = function ($seconds, callable $callable, array $params) {
-        yield \Sue\Coroutine\SystemCall\sleep($seconds);
-        return co($callable, ...$params);
+        yield \Sue\Coroutine\SystemCall\pause($seconds);
+        $promise = co($callable, ...$params);
+        yield \Sue\Coroutine\SystemCall\returnValue($promise);
     };
     return \Sue\Coroutine\Scheduler::getInstance()
         ->execute($closure, $seconds, $callable, $params);

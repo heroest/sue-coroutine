@@ -1,10 +1,13 @@
-sue\coroutine
+sue/coroutine
 ====================
-提供基于sue/event-loop的协程组件
+提供基于[sue/event-loop](https://https://github.com/heroest/sue-event-loop)的协程组件
 
 ## What is ReactPHP?
 
 [ReactPHP](https://reactphp.org/)是一款基于PHP的事件驱动的组件。核心是提供EventLoop，然后提供基于EventLoop上的各种组件，比方说I/O处理等。sue/event-loop组件也是基于ReactPHP提供的EventLoop
+
+#### 环境需求
+- php >= 5.6.4
 
 **Table of Contents**
 * [Install](#install)
