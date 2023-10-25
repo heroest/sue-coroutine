@@ -1,6 +1,6 @@
-sue\coroutine
+sue/coroutine
 ====================
-提供基于sue/event-loop的协程组件
+提供基于[sue/event-loop](https://https://github.com/heroest/sue-event-loop)的协程组件
 
 ## What is sue\coroutine
 `sue\coroutine`是基于`sue\event-loop`事件循环生态的协程方案，底层是php的迭代器，但是针对php5版本做了兼容处理以及一些针对协程的控制逻辑。 `sue\event-loop`是基于流程的ReactPHP进行的开发
@@ -8,6 +8,9 @@ sue\coroutine
 ## What is ReactPHP?
 
 [ReactPHP](https://reactphp.org/)是一款基于PHP的事件驱动的组件。核心是提供EventLoop，然后提供基于EventLoop上的各种组件，比方说I/O处理等。sue/event-loop组件也是基于ReactPHP提供的EventLoop
+
+#### 环境需求
+- php >= 5.6.4
 
 **Table of Contents**
 * [Install](#install)
