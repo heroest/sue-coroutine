@@ -56,16 +56,15 @@ class Scheduler
     /**
      * 设置自定义Coroutine Class
      *
-     * @param string $custom_class
-     * @return void
+     * @param string $coroutine_class
+     * @return self
+     * @deprecated 2.0
+     * @see \Sue\Coroutine\coAs()
      */
-    public function setCustomCoroutineClass(string $custom_class)
+    public function setCustomCoroutineClass(string $coroutine_class)
     {
-        $base_class = Coroutine::class;
-        if (!is_subclass_of($custom_class, $base_class)) {
-            throw new BadMethodCallException("{$custom_class} is not a subclass of {$base_class}");
-        }
-        $this->coroutineClass = $custom_class;
+        $this->validateCoroutineClass($coroutine_class);
+        $this->coroutineClass = $coroutine_class;
         return $this;
     }
 
@@ -78,10 +77,24 @@ class Scheduler
      */
     public function execute(callable $callable, ...$params)
     {
+        return $this->executeAs('', $callable, ...$params);
+    }
+
+    /**
+     * 指定以协程class来执行协程
+     *
+     * @param string $coroutine_class
+     * @param callable $callable
+     * @param mixed ...$params
+     * @return PromiseInterface|Promise
+     */
+    public function executeAs($coroutine_class, callable $callable, ...$params)
+    {
         try {
+            $coroutine_class and $this->validateCoroutineClass($coroutine_class);
             $result = call_user_func_array($callable, $params);
             if ($result instanceof Generator) {
-                $coroutine = $this->createCoroutine($result);
+                $coroutine = $this->createCoroutine($result, $coroutine_class);
                 $this->ticker or $this->ticker = setInterval(0, [$this, 'tick']);
                 return $coroutine->promise();
             } else {
@@ -173,7 +186,7 @@ class Scheduler
     private function handleGenerator(Generator $generator, Coroutine $parent)
     {
         $this->handlePromise(
-            $this->createCoroutine($generator)->promise(),
+            $this->createCoroutine($generator, get_class($parent))->promise(),
             $parent
         );
     }
@@ -201,7 +214,7 @@ class Scheduler
                     break;
 
                 case $item instanceof Generator:
-                    $child = $this->createCoroutine($item);
+                    $child = $this->createCoroutine($item, get_class($coroutine));
                     $promises[$key] = $child->promise();
                     break;
 
@@ -209,7 +222,7 @@ class Scheduler
                     $generator = (static function () use ($item) {
                         yield new ReturnValue(yield $item);
                     })();
-                    $child = $this->createCoroutine($generator);
+                    $child = $this->createCoroutine($generator, get_class($coroutine));
                     $promises[$key] = $child->promise();
                     break;
 
@@ -256,11 +269,12 @@ class Scheduler
      * 创建协程
      *
      * @param Generator $generator
+     * @param string $coroutine 指定协程类名
      * @return Coroutine
      */
-    private function createCoroutine(Generator $generator)
+    private function createCoroutine(Generator $generator, $coroutine_class = '')
     {
-        $class = $this->coroutineClass;
+        $class = $coroutine_class ?: $this->coroutineClass;
         $coroutine = new $class($generator);
         $this->coroutineWorking->attach($coroutine);
         return $coroutine;
@@ -310,6 +324,20 @@ class Scheduler
                     }
                     break;
             }
+        }
+    }
+
+    /**
+     * 检验coroutine class名是否有效
+     *
+     * @param [type] $class
+     * @return void
+     */
+    private function validateCoroutineClass($class)
+    {
+        $base_class = Coroutine::class;
+        if (!($class === $base_class or is_subclass_of($class, $base_class))) {
+            throw new BadMethodCallException("{$class} is not a subclass of {$base_class}");
         }
     }
 }

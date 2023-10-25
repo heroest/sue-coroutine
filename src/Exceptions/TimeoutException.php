@@ -2,6 +2,7 @@
 
 namespace Sue\Coroutine\Exceptions;
 
-class TimeoutException extends \RuntimeException
+
+class TimeoutException extends CoroutineException
 {
 }

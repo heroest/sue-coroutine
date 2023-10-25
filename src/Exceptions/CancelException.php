@@ -2,6 +2,7 @@
 
 namespace Sue\Coroutine\Exceptions;
 
-class CancelException extends \RuntimeException
+
+class CancelException extends CoroutineException
 {
 }

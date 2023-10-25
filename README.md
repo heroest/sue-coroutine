@@ -2,6 +2,9 @@ sue\coroutine
 ====================
 提供基于sue/event-loop的协程组件
 
+## What is sue\coroutine
+`sue\coroutine`是基于`sue\event-loop`事件循环生态的协程方案，底层是php的迭代器，但是针对php5版本做了兼容处理以及一些针对协程的控制逻辑。 `sue\event-loop`是基于流程的ReactPHP进行的开发
+
 ## What is ReactPHP?
 
 [ReactPHP](https://reactphp.org/)是一款基于PHP的事件驱动的组件。核心是提供EventLoop，然后提供基于EventLoop上的各种组件，比方说I/O处理等。sue/event-loop组件也是基于ReactPHP提供的EventLoop
@@ -11,14 +14,17 @@ sue\coroutine
 * [Requirements](#requirements)
 * [PHP5兼容方案](#php5兼容方案)
 * [Quickstart example](#quickstart-example)
-* [Methods](#methods)
-  * [\Sue\Coroutine\co](#co)
-  * [\Sue\Coroutine\go](#go)
-  * [\Sue\Coroutine\defer](#defer)
-  * [\Sue\Coroutine\SystemCall\sleep](#sleep)
-  * [\Sue\Coroutine\SystemCall\timeout](#timeout)
-  * [\Sue\Coroutine\SystemCall\cancel](#cancel)
-  * [\Sue\Coroutine\SystemCall\returnValue](#returnValue)
+* [functions](#functions)
+  * [\Sue\Coroutine\co()](#co)
+  * [\Sue\Coroutine\coAs()](#coAs)
+  * [\Sue\Coroutine\go()](#go)
+  * [\Sue\Coroutine\defer()](#defer)
+  * [\Sue\Coroutine\async()](#async)
+  * [\Sue\Coroutine\SystemCall\pause()](#pause)
+  * [\Sue\Coroutine\SystemCall\sleep()](#sleep)
+  * [\Sue\Coroutine\SystemCall\timeout()](#timeout)
+  * [\Sue\Coroutine\SystemCall\cancel()](#cancel)
+  * [\Sue\Coroutine\SystemCall\returnValue()](#returnValue)
 * [Tests](#tests)
 * [License](#license)
 
@@ -72,7 +78,7 @@ co(function ($promise) {
 loop()->run();
 ```
 
-## methods
+## functions
 
 ## co
 `\Sue\Coroutine\co($callable)` 可以将一段callable且是迭代器的代码以协程方式执行，如果callable非迭代器(generator)的话，那么会直接返回结果，使用方法如下:
@@ -100,8 +106,46 @@ loop()->run();
 **/
 ```
 
+## coAs
+`\Sue\Coroutine\coAs($coroutine_class, $callable)`方法同`co`, 区别是可以使用自定义的协程class（需要继承\Sue\Coroutine\Coroutine)。用此方法启动的协程中的子协程也会自动继承父级使用的自定义协程class
+```php
+namespace App\Custom;
+
+class CustomCoroutine extends \Sue\Coroutine\Coroutine
+{
+    public function get()
+    {
+        $result = parent::get();
+        Log::info('result got', ['data' => $result]);
+    }
+}
+coAs(\App\Custom\CustomCoroutine::class, $callable);
+```
+
 ## go
+*** 请不要使用, 计划未来移除 ***
 `Sue\Coroutine\go($callable)`方法和作用同`co()`，只是没有返回值
+
+## async
+`\Sue\Coroutine\async($callable, $timeout)`方法可以临时启动一个eventloop来执行一段协程的代码, 当协程执行完毕或者超时后eventloop将被关闭. 该方法适用于传统的阻塞php模型（比如php-fpm）中使用异步的特性. 方法返回协程返回值或者抛出异常
+*** 该方法无法在一个已启动eventloop中使用 ***
+```php
+try {
+    $timeout = 15;
+    $result = async(function () {
+        $promise_a = someHeavyOperation();
+        $promise_b = someHeavyOperation();
+        //让两个promise并行处理
+        list($value_a, $value_b) = yield [$promise_a, $promise_b];
+        yield returnValue(['a' => $value_a, 'b' => $value_b]);
+    }, $timeout);
+    doSomething($result['a']);
+    doSomething($result['b']);
+    //handle result
+} catch (Throwable $e) {
+    //error handle
+}
+```
 
 ## defer
 `Sue\Coroutine\defer($interval, $callable, ...$callable_params)` 可以延迟一段时间再执行协程
@@ -140,9 +184,8 @@ loop()->run();
 **/
 ```
 
-## sleep
-**可以用\Sue\Coroutine\SystemCall\pause方法代替，效果一致**
-`Sue\Coroutine\SystemCall\sleep($seconds)`生成一个系统指令，可以让当前协程进行休眠指定X秒，之后继续执行
+## pause
+`Sue\Coroutine\pause($seconds)`可以生成一条系统指令，效果是让当前协程暂停执行并进行休眠，之后继续执行
 ```php
 use Sue\Coroutine\SystemCall;
 
@@ -176,6 +219,11 @@ loop()->run();
  ...
 **/
 ```
+
+## sleep
+**建议用`\Sue\Coroutine\SystemCall\pause`方法代替，效果一致，此方法未来移除**
+`Sue\Coroutine\SystemCall\sleep($seconds)`效果同`\Sue\Coroutine\SystemCall\pause($seconds)`
+
 
 ## timeout
 `\Sue\Coroutine\SystemCall\timeout($seconds)`生成一个系统指令，可以为当前协程设置最大运行时间，如果超过运行时间，则会抛出异常
@@ -236,6 +284,7 @@ loop()->run();
 ```
 
 ## returnValue
+*** php7以上版本可以直接用`return` ***
 `Sue\Coroutine\SystemCall\returnValue($value)`生成一条系统指令，可以中止当前协程及子协程，并返回value值
 
 ```php

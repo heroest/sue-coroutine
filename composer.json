@@ -3,7 +3,7 @@
     "description": "提供基于sue/event-loop的协程组件",
     "type": "library",
     "require": {
-        "sue/event-loop": "^1.0",
+        "sue/event-loop": "^1.2",
         "react/promise": "^2.9",
         "react/promise-timer": "^1.9"
     },

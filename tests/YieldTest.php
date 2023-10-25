@@ -3,22 +3,162 @@
 namespace Sue\Coroutine\Tests;
 
 use Exception;
+use Throwable;
 use RuntimeException;
 use SplFileObject;
 use React\Promise\Deferred;
+use React\Promise\Timer\TimeoutException;
 use Sue\Coroutine\Exceptions\CancelException;
+use Sue\Coroutine\Exceptions\TimeoutException as CoroutineTimeoutException;
 use Sue\Coroutine\Tests\BaseTestCase;
 use Sue\Coroutine\Tests\Custom\GetCoroutine;
+use Sue\Coroutine\Tests\Custom\CustomCoroutine;
 
 use function React\Promise\resolve;
 use function Sue\EventLoop\loop;
 use function Sue\EventLoop\setTimeout;
 use function Sue\Coroutine\co;
+use function Sue\Coroutine\coAs;
 use function Sue\Coroutine\defer;
 use function Sue\Coroutine\go;
+use function Sue\Coroutine\async;
+use function Sue\Coroutine\SystemCall\returnValue;
+use function Sue\Coroutine\SystemCall\timeout;
+use function React\Promise\Timer\sleep as TimerSleep;
 
 final class YieldTest extends BaseTestCase
 {
+    public function testCoAs()
+    {
+        $class = CustomCoroutine::class;
+        $coroutine = null;
+        coAs($class, function () use (&$coroutine) {
+            $coroutine = yield new GetCoroutine();
+        })->otherwise(function ($e) {
+            exit($e);
+        });
+        loop()->run();
+        $this->assertNotNull($coroutine);
+        $this->assertInstanceOf($class, $coroutine);
+    }
+
+    public function testCoAsNested()
+    {
+        $class = CustomCoroutine::class;
+        $coroutine = null;
+        $callable = function () use (&$coroutine) {
+            $children = function () use (&$coroutine) {
+                $coroutine = yield new GetCoroutine();
+            };
+            yield $children();
+        };
+
+        co($callable);
+        loop()->run();
+        $this->assertNotNull($coroutine);
+        $this->assertFalse($coroutine instanceof $class);
+
+        $coroutine = null;
+        coAs($class, $callable);
+        loop()->run();
+        $this->assertNotNull($coroutine);
+        $this->assertTrue($coroutine instanceof $class);
+    }
+
+    public function testCoAsNestArray()
+    {
+        $class = CustomCoroutine::class;
+        $coroutine = null;
+        $callable = function () use (&$coroutine) {
+            $children = function () use (&$coroutine) {
+                $coroutine = yield new GetCoroutine();
+            };
+            yield [$children(), resolve('foo'), resolve('bar')];
+        };
+        coAs($class, $callable);
+        loop()->run();
+        $this->assertNotNull($coroutine);
+        $this->assertTrue($coroutine instanceof $class);
+    }
+
+    public function testAsync()
+    {
+        $promise = TimerSleep(0.2, loop())->then(function () {
+            return 'foo';
+        });
+        $st = microtime(true);
+        $result = async(function () use ($promise) {
+            yield returnValue(yield $promise);
+        });
+        $time_used = $this->getTimeUsed($st);
+        $this->assertEquals('foo', $result);
+        $this->assertGreaterThanOrEqual(0.2, $time_used);
+    }
+
+    public function testAsyncWithReject()
+    {
+        $promise = TimerSleep(0.2, loop())->then(function () {
+            throw new \Exception('bar');
+        });
+        $exception = null;
+        $st = microtime(true);
+        try {
+            async(function () use ($promise) {
+                yield returnValue(yield $promise);
+            });
+        } catch (Throwable $e) {
+            $exception = $e;
+        }
+        
+        $time_used = $this->getTimeUsed($st);
+        $this->assertEquals($exception, new \Exception('bar'));
+        $this->assertGreaterThanOrEqual(0.2, $time_used);
+    }
+
+    public function testAsyncWithTimeout()
+    {
+        $executed = false;
+        $promise = TimerSleep(2, loop())->then(function () use (&$executed) {
+            $executed = true;
+        });
+        $st = microtime(true);
+        $exception = null;
+        try {
+            async(function () use ($promise) {
+                $value = yield $promise;
+                yield returnValue($value);
+            }, 0.5);
+        } catch (Throwable $e) {
+            $exception = $e;
+        }
+        $time_used = $this->getTimeUsed($st);
+        $this->assertTrue($exception instanceof TimeoutException);
+        $this->assertFalse($executed);
+        $this->assertGreaterThanOrEqual(0.5, $time_used);
+    }
+
+    public function testAsyncWithSystemCallTimeout()
+    {
+        $executed = false;
+        $promise = TimerSleep(2, loop())->then(function () use (&$executed) {
+            $executed = true;
+        });
+        $st = microtime(true);
+        $exception = null;
+        try {
+            async(function () use ($promise) {
+                yield timeout(0.5);
+                yield returnValue(yield $promise);
+            });
+        } catch (Throwable $e) {
+            $exception = $e;
+        }
+        $time_used = $this->getTimeUsed($st);
+        $this->assertTrue($exception instanceof CoroutineTimeoutException);
+        $this->assertFalse($executed);
+        $this->assertGreaterThanOrEqual(0.5, $time_used);
+    }
+
     public function testPromise()
     {
         $yielded = null;
@@ -150,7 +290,7 @@ final class YieldTest extends BaseTestCase
     {
         $child = function () {
             yield 'foo';
-            return 'bar';
+            yield returnValue('bar');
         };
         $yielded = false;
         co(function () use (&$yielded, $child) {
@@ -165,11 +305,11 @@ final class YieldTest extends BaseTestCase
     {
         $l2 = function () {
             $result = yield 'bar';
-            return $result;
+            yield returnValue($result);
         };
         $l1 = function () use ($l2) {
             yield 'foo';
-            return yield $l2();
+            yield returnValue(yield $l2());
         };
 
         $yielded = false;
@@ -216,11 +356,11 @@ final class YieldTest extends BaseTestCase
             $yielded = yield [
                 (function () {
                     $result = yield 'foo';
-                    return $result;
+                    yield returnValue($result);
                 })(),
                 (function () {
                     $result = yield 'bar';
-                    return $result;
+                    yield returnValue($result);
                 })(),
             ];
         });
@@ -235,7 +375,7 @@ final class YieldTest extends BaseTestCase
         co(function () use (&$yielded, $exception) {
             $yielded = yield [
                 (function () {
-                    return yield 'foo';
+                    yield returnValue(yield 'foo');
                 })(),
                 \React\Promise\resolve('bar'),
                 \React\Promise\reject($exception)
@@ -400,7 +540,7 @@ final class YieldTest extends BaseTestCase
                 $coroutine->cancel($bar);
             });
             yield $deferred->promise();
-            return true;
+            yield returnValue(true);
         }, $foo, $bar)
         ->otherwise(function ($e) use (&$throwable) {
                 $throwable = $e;
@@ -424,7 +564,7 @@ final class YieldTest extends BaseTestCase
                 $coroutine->cancel(null);
             });
             yield $deferred->promise();
-            return true;
+            yield returnValue(true);
         }, $foo)
         ->otherwise(function ($e) use (&$throwable) {
                 $throwable = $e;

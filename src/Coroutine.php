@@ -10,7 +10,6 @@ use React\Promise\Promise;
 use React\Promise\PromiseInterface;
 use Sue\Coroutine\Exceptions\CancelException;
 
-use function Sue\Coroutine\Utils\isPhp7;
 
 class Coroutine
 {
@@ -132,7 +131,7 @@ class Coroutine
         try {
             if ($this->generator->valid()) {
                 $result = $this->generator->current();
-            } elseif (isPhp7()) { //php7开始才允许在generator里使用return方法
+            } elseif (method_exists($this->generator, 'getReturn')) { //php7开始才允许在generator里使用return方法
                 /**
                  * 以免generator没有return语句
                  * https://www.php.net/manual/en/generator.getreturn.php#121449

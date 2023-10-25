@@ -16,11 +16,42 @@ function co(callable $callable, ...$params)
 }
 
 /**
+ * 以指定协程class的方式执行
+ *
+ * @param string $coroutine_class
+ * @param callable $callable
+ * @param mixed ...$params
+ * @return \React\Promise\Promise|\React\Promise\PromiseInterface
+ */
+function coAs($coroutine_class, callable $callable, ...$params)
+{
+    return \Sue\Coroutine\Scheduler::getInstance()
+        ->executeAs($coroutine_class, $callable, ...$params);
+}
+
+/**
+ * 以阻塞的方式执行一段协程
+ * *** 不能在eventloop已经启动情况下使用 ***
+ *
+ * @param callable $callable
+ * @param integer $timeout
+ * @return mixed
+ * @throws \Exception
+ */
+function async(callable $callable, $timeout = 0)
+{
+    $timeout = (float) $timeout;
+
+    return \Sue\EventLoop\await(co($callable), $timeout);
+}
+
+/**
  * 以协程方式运行，与co()方法一样，但是没有返回值
  *
  * @param callable $callable
  * @param mixed ...$params
  * @return void
+ * @deprecated 2.0
  */
 function go(callable $callable, ...$params)
 {
@@ -39,12 +70,21 @@ function defer($seconds, callable $callable, ...$params)
 {
     $seconds = (float) $seconds;
 
-    $closure = function ($seconds, callable $callable, array $params) {
-        yield \Sue\Coroutine\SystemCall\sleep($seconds);
-        return co($callable, ...$params);
+    /** @var null|\React\Promise\Promise $promise */
+    $promise = null;
+    $deferred = new \React\Promise\Deferred(function ($_, $reject) use (&$promise) {
+        $promise->otherwise(function ($e) use ($reject) {
+            $reject($e);
+        });
+        $promise->cancel();
+    });
+    $closure = function (\React\Promise\Deferred $deferred, $seconds, callable $callable, array $params) {
+        yield \Sue\Coroutine\SystemCall\pause($seconds);
+        $deferred->resolve(co($callable, ...$params));
     };
-    return \Sue\Coroutine\Scheduler::getInstance()
-        ->execute($closure, $seconds, $callable, $params);
+    $promise = \Sue\Coroutine\Scheduler::getInstance()
+        ->execute($closure, $deferred, $seconds, $callable, $params);
+    return $deferred->promise();
 }
 
 namespace Sue\Coroutine\SystemCall;
@@ -113,16 +153,4 @@ function cancel($message, $code = 500)
 function returnValue($value)
 {
     return new \Sue\Coroutine\SystemCall\ReturnValue($value);
-}
-
-namespace Sue\Coroutine\Utils;
-
-/**
- * 是否是php7.0以上版本
- *
- * @return boolean
- */
-function isPhp7()
-{
-    return \PHP_VERSION_ID >= 70000;
 }
